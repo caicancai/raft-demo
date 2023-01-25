@@ -193,9 +193,6 @@ func (cm *ConsensusModule) AppendEntries(args AppendEntriesArgs, reply *AppendEn
 
 // electionTimeout generates a pseudo-random election timeout duration.
 func (cm *ConsensusModule) electionTimeout() time.Duration {
-	// If RAFT_FORCE_MORE_REELECTION is set, stress-test by deliberately
-	// generating a hard-coded number very often. This will create collisions
-	// between different servers and force more re-elections.
 	if len(os.Getenv("RAFT_FORCE_MORE_REELECTION")) > 0 && rand.Intn(3) == 0 {
 		return time.Duration(150) * time.Millisecond
 	} else {
@@ -210,6 +207,7 @@ func (cm *ConsensusModule) runElectionTimer() {
 	cm.mu.Unlock()
 	cm.dlog("election timer started (%v), term=%d", timeoutDuration, termStarted)
 
+	//10毫秒计时器
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -251,8 +249,7 @@ func (cm *ConsensusModule) becomeFollower(term int) {
 	go cm.runElectionTimer()
 }
 
-// startLeader switches cm into a leader state and begins process of heartbeats.
-// Expects cm.mu to be locked.
+// 变成领导者
 func (cm *ConsensusModule) startLeader() {
 	cm.state = Leader
 	cm.dlog("becomes Leader; term=%d, log=%v", cm.currentTerm, cm.log)
@@ -276,8 +273,7 @@ func (cm *ConsensusModule) startLeader() {
 	}()
 }
 
-// startElection starts a new election with this CM as a candidate.
-// Expects cm.mu to be locked.
+// 候选人选举
 func (cm *ConsensusModule) startElection() {
 	cm.state = Candidate
 	cm.currentTerm += 1
@@ -309,14 +305,15 @@ func (cm *ConsensusModule) startElection() {
 				}
 
 				if reply.Term > savedCurrentTerm {
+					//如果选票低于另一个候选人选票就变成跟随者
 					cm.dlog("term out of date in RequestVoteReply")
 					cm.becomeFollower(reply.Term)
 					return
 				} else if reply.Term == savedCurrentTerm {
 					if reply.VoteGranted {
 						votesReceived += 1
+						//如果获得大多数选票就赢得这次选举
 						if votesReceived*2 > len(cm.peerIds)+1 {
-							// Won the election!
 							cm.dlog("wins election with %d votes", votesReceived)
 							cm.startLeader()
 							return
@@ -331,8 +328,7 @@ func (cm *ConsensusModule) startElection() {
 	go cm.runElectionTimer()
 }
 
-// leaderSendHeartbeats sends a round of heartbeats to all peers, collects their
-// replies and adjusts cm's state.
+// 心跳机制
 func (cm *ConsensusModule) leaderSendHeartbeats() {
 	cm.mu.Lock()
 	if cm.state != Leader {
