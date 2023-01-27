@@ -6,4 +6,4 @@ part1：领导者选举
 
 part2：日志复制
 
-part3： raft整体实现与优化
+part3： 持久化
